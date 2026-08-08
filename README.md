@@ -233,7 +233,7 @@ Low Priority: Score < 2
 ## 👥 Team
 
 - **Project Guide:** Dr. M SHANMUGAM
-- **Institution:** [Your Institution]
+- **Institution:** Sri Manakula Vinayagar Engineering College
 
 ## 📄 License
 
