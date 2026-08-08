@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Dashboard - AI Grievance System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="index.html"><strong>AI Grievance System</strong></a>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto"></ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container my-4">
+        <h2 class="mb-4">Admin Dashboard - Review Petitions</h2>
+
+        <!-- Filters -->
+        <div class="filter-section">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <select class="form-select" id="statusFilter">
+                        <option value="">All Status</option>
+                        <option value="submitted" selected>Submitted</option>
+                        <option value="in_review">In Review</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="rejected">Rejected</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <select class="form-select" id="priorityFilter">
+                        <option value="">All Priority</option>
+                        <option value="high">High Priority</option>
+                        <option value="medium">Medium Priority</option>
+                        <option value="low">Low Priority</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary" onclick="loadPetitions()">Apply Filters</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Petitions List -->
+        <div id="petitionsList" class="mt-4">
+            <div class="spinner-container">
+                <div class="spinner-border text-primary" role="status"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Review Modal -->
+    <div class="modal fade" id="reviewModal" tabindex="-1">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Review Petition - AI Insights</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="petitionReview">
+                        <!-- Review content will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="js/app.js"></script>
+    <script>
+        // Check authentication
+        if (!checkAuth()) {
+            window.location.href = 'login.html';
+        }
+
+        // Check if user is admin or officer
+        const user = getUser();
+        if (user.role !== 'admin' && user.role !== 'officer') {
+            showAlert('Access denied. Admin/Officer only.', 'danger');
+            setTimeout(() => window.location.href = 'dashboard.html', 2000);
+        }
+
+        let reviewModal;
+
+        document.addEventListener('DOMContentLoaded', function () {
+            reviewModal = new bootstrap.Modal(document.getElementById('reviewModal'));
+            loadPetitions();
+        });
+
+        async function loadPetitions() {
+            const listContainer = document.getElementById('petitionsList');
+            showLoading(listContainer);
+
+            const filters = {
+                status: document.getElementById('statusFilter').value,
+                priority: document.getElementById('priorityFilter').value
+            };
+
+            try {
+                const result = await api.getPetitions(filters);
+
+                if (result.petitions && result.petitions.length > 0) {
+                    listContainer.innerHTML = result.petitions.map(petition => `
+                        <div class="petition-card">
+                            <div class="petition-card-header">
+                                <div>
+                                    <h5 class="mb-1">${petition.title}</h5>
+                                    <span class="petition-id">${petition.petition_id}</span>
+                                    <span class="ms-2 text-muted">by ${petition.user?.name || 'User'}</span>
+                                </div>
+                                <div>
+                                    <span class="badge ${getStatusBadgeClass(petition.status)}">${formatStatus(petition.status)}</span>
+                                    <span class="badge ${getPriorityBadgeClass(petition.priority)} ms-2">${petition.priority.toUpperCase()}</span>
+                                    ${petition.urgency_level === 'critical' ? '<span class="badge bg-danger ms-2">CRITICAL</span>' : ''}
+                                </div>
+                            </div>
+                            <p class="text-muted mb-2">${petition.description}</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <small class="text-muted">
+                                        <strong>Department:</strong> ${petition.department || 'Pending'} | 
+                                        <strong>Urgency:</strong> ${petition.urgency_level}
+                                    </small>
+                                </div>
+                                <div>
+                                    <small class="text-muted">${formatDate(petition.created_at)}</small>
+                                    <button class="btn btn-sm btn-primary ms-2" onclick="reviewPetition(${petition.id})">
+                                        Review & Decide
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                } else {
+                    listContainer.innerHTML = `
+                        <div class="text-center py-5">
+                            <p class="text-muted">No petitions found</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                listContainer.innerHTML = `<div class="alert alert-danger">Error loading petitions: ${error.message}</div>`;
+            }
+        }
+
+        async function reviewPetition(id) {
+            const reviewContainer = document.getElementById('petitionReview');
+            showLoading(reviewContainer);
+            reviewModal.show();
+
+            try {
+                const result = await api.getPetition(id);
+                const petition = result.petition;
+                const history = result.status_history;
+
+                reviewContainer.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h4>${petition.title}</h4>
+                            <p class="text-muted">${petition.petition_id}</p>
+                            
+                            <div class="card bg-light mb-3">
+                                <div class="card-body">
+                                    <h6>Petition Details</h6>
+                                    <p>${petition.description}</p>
+                                    <p class="mb-0"><strong>Submitted by:</strong> ${petition.user.name} (${petition.user.email})</p>
+                                    <p class="mb-0"><strong>Date:</strong> ${formatDate(petition.created_at)}</p>
+                                </div>
+                            </div>
+
+                            <div class="card bg-light mb-3">
+                                <div class="card-body">
+                                    <h6>Status Timeline</h6>
+                                    <div class="timeline">
+                                        ${history.map((item, index) => `
+                                            <div class="timeline-item ${index === 0 ? 'active' : ''}">
+                                                <strong>${formatStatus(item.status)}</strong>
+                                                ${item.comment ? `<p class="mb-1">${item.comment}</p>` : ''}
+                                                <small class="text-muted">${formatDate(item.timestamp)} - ${item.updated_by}</small>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card border-primary mb-3">
+                                <div class="card-header bg-primary text-white">
+                                    <strong>AI-Generated Insights</strong>
+                                </div>
+                                <div class="card-body">
+                                    <p><strong>Category:</strong><br>${petition.category}</p>
+                                    <p><strong>Department:</strong><br>${petition.department || 'Pending'}</p>
+                                    <p><strong>Priority Level:</strong><br>
+                                        <span class="badge ${getPriorityBadgeClass(petition.priority)}">${petition.priority.toUpperCase()}</span>
+                                    </p>
+                                    <p><strong>Urgency:</strong><br>
+                                        <span class="badge ${petition.urgency_level === 'critical' ? 'bg-danger' : 'bg-warning'}">${petition.urgency_level.toUpperCase()}</span>
+                                    </p>
+                                    <p><strong>Sentiment Score:</strong><br>
+                                        ${petition.sentiment_score > 0 ? '😊 Positive' : petition.sentiment_score < 0 ? '😞 Negative' : '😐 Neutral'}
+                                        (${petition.sentiment_score.toFixed(2)})
+                                    </p>
+                                    <hr>
+                                    <p class="mb-0"><small class="text-muted">
+                                        <strong>AI Recommendation:</strong><br>
+                                        ${petition.priority === 'high' ? 'Requires immediate attention and fast-track processing.' :
+                        petition.priority === 'medium' ? 'Should be addressed within standard timeframe.' :
+                            'Can be scheduled for regular processing.'}
+                                    </small></p>
+                                </div>
+                            </div>
+
+                            <div class="card">
+                                <div class="card-header">
+                                    <strong>Update Status</strong>
+                                </div>
+                                <div class="card-body">
+                                    <form id="statusUpdateForm">
+                                        <div class="mb-3">
+                                            <label class="form-label">New Status</label>
+                                            <select class="form-select" id="newStatus" required>
+                                                <option value="">Select Status</option>
+                                                <option value="in_review">In Review</option>
+                                                <option value="in_progress">In Progress</option>
+                                                <option value="resolved">Resolved</option>
+                                                <option value="rejected">Rejected</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3" id="rejectionReasonDiv" style="display:none;">
+                                            <label class="form-label">Rejection Reason</label>
+                                            <select class="form-select" id="rejectionReason">
+                                                <option value="">Select Reason</option>
+                                                <option value="insufficient_information">Insufficient Information</option>
+                                                <option value="duplicate">Duplicate Petition</option>
+                                                <option value="out_of_jurisdiction">Out of Jurisdiction</option>
+                                                <option value="invalid_request">Invalid Request</option>
+                                                <option value="other">Other</option>
+                                            </select>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Comment / Resolution</label>
+                                            <textarea class="form-control" id="statusComment" rows="4" required></textarea>
+                                            <small class="text-muted">This will be sent to the petitioner</small>
+                                        </div>
+                                        <button type="submit" class="btn btn-primary w-100">Update Status</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                // Handle status change to show/hide rejection reason
+                document.getElementById('newStatus').addEventListener('change', function () {
+                    const rejectionDiv = document.getElementById('rejectionReasonDiv');
+                    const commentField = document.getElementById('statusComment');
+
+                    if (this.value === 'rejected') {
+                        rejectionDiv.style.display = 'block';
+                        commentField.placeholder = 'Explain why this petition is being rejected and provide suggestions for resubmission...';
+                    } else if (this.value === 'resolved') {
+                        rejectionDiv.style.display = 'none';
+                        commentField.placeholder = 'Describe the resolution and actions taken...';
+                    } else {
+                        rejectionDiv.style.display = 'none';
+                        commentField.placeholder = 'Add any relevant comments...';
+                    }
+                });
+
+                // Handle form submission
+                document.getElementById('statusUpdateForm').addEventListener('submit', async function (e) {
+                    e.preventDefault();
+
+                    const newStatus = document.getElementById('newStatus').value;
+                    let comment = document.getElementById('statusComment').value;
+                    const rejectionReason = document.getElementById('rejectionReason').value;
+
+                    // Add rejection reason to comment if rejected
+                    if (newStatus === 'rejected' && rejectionReason) {
+                        const reasonText = {
+                            'insufficient_information': 'Insufficient Information',
+                            'duplicate': 'Duplicate Petition',
+                            'out_of_jurisdiction': 'Out of Jurisdiction',
+                            'invalid_request': 'Invalid Request',
+                            'other': 'Other'
+                        }[rejectionReason];
+
+                        comment = `[REJECTED - ${reasonText}] ${comment}\\n\\nSuggestion: Please provide more details and resubmit your petition with complete information.`;
+                    }
+
+                    try {
+                        const result = await api.updatePetitionStatus(petition.id, {
+                            status: newStatus,
+                            comment: comment
+                        });
+
+                        if (result.message) {
+                            showAlert('Status updated successfully!', 'success');
+                            reviewModal.hide();
+                            loadPetitions();
+                        } else {
+                            showAlert(result.error || 'Failed to update status', 'danger');
+                        }
+                    } catch (error) {
+                        showAlert('Error: ' + error.message, 'danger');
+                    }
+                });
+
+            } catch (error) {
+                reviewContainer.innerHTML = `<div class="alert alert-danger">Error loading petition: ${error.message}</div>`;
+            }
+        }
+    </script>
+</body>
+
+</html>
