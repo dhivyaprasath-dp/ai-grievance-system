@@ -79,7 +79,7 @@ This system automates the grievance handling process using:
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/ISHWARYAKATHAMBARI/ai-grievance-system.git
+git clone https://github.com/dhivyaprasath-dp/ai-grievance-system.git
 cd ai-grievance-system
 ```
 
